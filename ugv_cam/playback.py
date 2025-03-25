@@ -8,11 +8,14 @@ import time
 import argparse
 from pathlib import Path
 from datetime import datetime
+from typing import List, Tuple
 
 import pygame
 import cv2
 import numpy as np
 
+from .kinematics import predict_trajectory
+from .utils import project_trajectory
 
 class UGVPlayback:
     """Visualizes recorded UGV data using PyGame"""
@@ -101,6 +104,20 @@ class UGVPlayback:
             print(f"Error loading image {image_path}: {e}")
             return None
 
+    def get_future_speeds(self, start_frame: int, duration: float) -> List[Tuple[float, float]]:
+        """Get sequence of speed pairs for next 'duration' seconds"""
+        fps = 30  # Assuming 30fps data
+        n_frames = int(duration * fps)
+        speeds = []
+        
+        for i in range(start_frame, min(start_frame + n_frames, len(self.data))):
+            frame = self.data[i]
+            left = float(frame.get('left_speed', 0))
+            right = float(frame.get('right_speed', 0))
+            speeds.append((left, right))
+            
+        return speeds
+
     def draw_video_feed(self, image_path):
         """Draw the recorded video frame"""
         img = self.load_image(image_path)
@@ -115,6 +132,19 @@ class UGVPlayback:
             return
 
         try:
+            duration = 5.0  # seconds
+            dt = 1.0/30.0
+            n_steps = round(duration/dt)
+
+            # Get future speeds for next few seconds
+            future_speeds = self.get_future_speeds(self.current_frame, duration=duration)
+            
+            # Predict trajectory
+            trajectory = predict_trajectory(future_speeds, dt=dt, n_steps=n_steps)
+            
+            # Project trajectory onto image
+            img = project_trajectory(img, trajectory)
+
             # Rotate the image 90 degrees counterclockwise
             img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
             img = cv2.flip(img, 0)
@@ -139,6 +169,8 @@ class UGVPlayback:
             
         except Exception as e:
             print(f"Error displaying video: {e}")
+            import traceback
+            traceback.print_exc()
 
     def draw_sidebar(self, frame_data):
         """Draw the sidebar with recorded sensor data"""
