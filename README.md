@@ -1,5 +1,9 @@
 # UGV_CAM: Drive By Wire Platform
 
+<img src="media/bot.png">
+
+<img src="media/demo_playback.gif">
+
 This is a codebase to interface with the UGV+Camera platform:
 1. UGV01 / UGV02: REST JSON API to control the actuators and get IMU feedback
 2. M5Stack-TimerCam: Get video stream
