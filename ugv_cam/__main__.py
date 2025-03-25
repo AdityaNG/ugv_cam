@@ -8,6 +8,8 @@ PyGame demo:
 
 import time
 import sys
+from typing import Optional
+
 import argparse
 import pygame
 import numpy as np
@@ -39,11 +41,20 @@ class UGVDemo:
     GREEN = (50, 200, 50)
     RED = (255, 50, 50)
     YELLOW = (255, 255, 0)
+
+    # Controller settings
+    JOYSTICK_DEADZONE = 0.01  # Ignore small stick movements
+    TRIGGER_DEADZONE = 0.1    # Ignore small trigger movements
     
     def __init__(self, ugv_url="http://192.168.4.1", m5cam_url="http://192.168.4.6"):
         """Initialize the demo with connection to UGV and camera"""
         pygame.init()
+        pygame.joystick.init()
         pygame.font.init()
+
+        # Initialize gamepad if available
+        self.gamepad: Optional[pygame.joystick.Joystick] = None
+        self.setup_gamepad()
         
         # Set up the display
         self.screen = pygame.display.set_mode((self.WINDOW_WIDTH, self.WINDOW_HEIGHT))
@@ -76,6 +87,76 @@ class UGVDemo:
         print("UGV Demo initialized. Use WASD to control the robot.")
         print("Press ESCAPE or close the window to exit.")
     
+    def setup_gamepad(self):
+        """Initialize the first available gamepad"""
+        try:
+            if pygame.joystick.get_count() > 0:
+                self.gamepad = pygame.joystick.Joystick(0)
+                self.gamepad.init()
+                print(f"Gamepad detected: {self.gamepad.get_name()}")
+            else:
+                print("No gamepad detected, using keyboard controls")
+        except Exception as e:
+            print(f"Error initializing gamepad: {e}")
+            self.gamepad = None
+
+    def get_gamepad_input(self):
+        """Get normalized input values from gamepad using more intuitive controls"""
+        if not self.gamepad:
+            return None
+        
+        try:
+            # Right stick Y-axis for forward/backward (inverted)
+            forward = -self.gamepad.get_axis(3)  # Invert because Y-axis is inverted
+            # Right stick X-axis for turning
+            turn = -self.gamepad.get_axis(0)
+            boost = (self.gamepad.get_axis(4) + 1) / 2.0
+            
+            # Apply deadzone
+            forward = 0.0 if abs(forward) < self.JOYSTICK_DEADZONE else forward
+            turn = 0.0 if abs(turn) < self.JOYSTICK_DEADZONE else turn
+
+            boost = boost * 0.75 + 0.25
+            
+            # Convert to tank controls
+            # When turning right (positive turn), right track slows down
+            # When turning left (negative turn), left track slows down
+            left_y = forward - turn
+            right_y = forward + turn
+            
+            # if turn != 0:
+            #     # Clamp values
+            #     left_y = max(min(left_y, 0.25), -0.25)
+            #     right_y = max(min(right_y, 0.25), -0.25)
+            # else:
+            #     # Clamp values
+            #     left_y = max(min(left_y, 1.0), -1.0)
+            #     right_y = max(min(right_y, 1.0), -1.0)
+            
+            clamp = 0.25 + boost
+            
+            left_y = max(min(left_y, clamp), -clamp)
+            right_y = max(min(right_y, clamp), -clamp)
+            
+            return left_y, right_y
+        except Exception as e:
+            print(f"Error reading gamepad: {e}")
+            return None
+
+    def update_speeds(self):
+        """Update speeds from either gamepad or keyboard"""
+        # Try gamepad first
+        gamepad_input = self.get_gamepad_input()
+        if gamepad_input:
+            left_y, right_y = gamepad_input
+            self.left_speed = left_y * self.MAX_SPEED
+            self.right_speed = right_y * self.MAX_SPEED
+            return
+
+        # Fall back to keyboard if no gamepad input
+        keys = pygame.key.get_pressed()
+        self.update_speeds_from_keys(keys)
+
     def update_speeds_from_keys(self, keys):
         """Update motor speeds based on keyboard input"""
         # Reset speeds if no movement keys are pressed
@@ -304,16 +385,20 @@ class UGVDemo:
             y_pos += 30
         
         # Controls guide
-        y_pos = self.WINDOW_HEIGHT - 120
+        y_pos = self.WINDOW_HEIGHT - 160  # Adjusted to make room for more controls
         controls_title = self.info_font.render("Controls:", True, self.BLACK)
         self.screen.blit(controls_title, (self.VIDEO_AREA_WIDTH + 10, y_pos))
         y_pos += 25
         
         controls_text = [
+            "Keyboard:",
             "W - Forward",
             "S - Backward",
             "A - Turn Left",
             "D - Turn Right",
+            "Gamepad:",
+            "Right Stick Up/Down - Forward/Backward",
+            "Right Stick Left/Right - Turn Left/Right",
             "ESC - Exit"
         ]
         
@@ -347,10 +432,12 @@ class UGVDemo:
                     elif event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_ESCAPE:
                             self.is_running = False
+                    elif event.type == pygame.JOYBUTTONDOWN:
+                        if event.button == 7:  # Usually the START button
+                            self.is_running = False
                 
-                # Get current key states and update speeds
-                keys = pygame.key.get_pressed()
-                self.update_speeds_from_keys(keys)
+                # Update speeds using either gamepad or keyboard
+                self.update_speeds()
                 
                 # Update robot state at intervals
                 current_time = time.time()
