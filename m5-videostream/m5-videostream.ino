@@ -11,7 +11,7 @@
  * @Dependent Library:
  * TimerCam-arduino: https://github.com/m5stack/TimerCam-arduino
  * This setup has a 100 ms latency
- * Can be accessed using `ffplay -f mjpeg http://192.168.4.6/`
+ * Can be accessed using `ffplay -f mjpeg http://192.168.4.2/`
  */
 #include "M5TimerCAM.h"
 #include <WiFi.h>

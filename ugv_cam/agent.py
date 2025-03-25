@@ -17,26 +17,29 @@ from .schema import Action, State, ChassisFeedback, ImuData
 logger = logging.getLogger(__name__)
 
 
+def extract_jpeg(buffer):
+    """Extract JPEG image from MJPEG stream buffer"""
+    start = buffer.find(b'\xff\xd8')  # JPEG start marker
+    end = buffer.find(b'\xff\xd9')    # JPEG end marker
+    
+    if start != -1 and end != -1:
+        return buffer[start:end+2], buffer[end+2:]
+    return None, buffer
+
 class VideoStream:
-    """Handles video streaming from M5Stack TimerCam in a separate thread"""
+    """Handles video streaming from M5Stack TimerCAM in a separate thread"""
     
     def __init__(self, url: str, max_queue_size: int = 5):
-        """
-        Initialize video stream
-        
-        Args:
-            url: URL to the M5Stack TimerCam stream (e.g., "http://192.168.4.6")
-            max_queue_size: Maximum number of frames to keep in the queue
-        """
+        """[Constructor remains the same]"""
         self.url = url
         self.frame_queue = queue.Queue(maxsize=max_queue_size)
         self.stop_event = threading.Event()
         self.thread = None
         self.last_frame = None
         self.connected = False
-    
+
     def start(self):
-        """Start the video streaming thread"""
+        """[Start method remains the same]"""
         if self.thread is not None and self.thread.is_alive():
             logger.warning("Video stream thread is already running")
             return
@@ -45,9 +48,9 @@ class VideoStream:
         self.thread = threading.Thread(target=self._stream_video, daemon=True)
         self.thread.start()
         logger.info(f"Started video streaming from {self.url}")
-    
+
     def stop(self):
-        """Stop the video streaming thread"""
+        """[Stop method remains the same]"""
         if self.thread is None or not self.thread.is_alive():
             return
         
@@ -55,55 +58,62 @@ class VideoStream:
         self.thread.join(timeout=5.0)
         self.connected = False
         logger.info("Stopped video streaming")
-    
+
     def _stream_video(self):
         """Thread function to continuously fetch video frames"""
-        stream_url = f"{self.url.rstrip('/')}"
-        
-        # Check if the URL already includes a video path
-        if not (stream_url.endswith('.mjpeg') or stream_url.endswith('.mjpg')):
-            # Default M5 TimerCam URL format
-            stream_url = stream_url
-        
-        cap = cv2.VideoCapture(stream_url)
+        stream_url = f"{self.url.rstrip('/')}/stream"
         
         try:
-            if not cap.isOpened():
-                logger.error(f"Failed to open video stream at {stream_url}")
+            # Initialize stream
+            response = requests.get(stream_url, stream=True, timeout=10)
+            if not response.ok:
+                logger.error(f"Failed to connect to stream: {response.status_code}")
                 self.connected = False
                 return
-            
+
             self.connected = True
             logger.info(f"Successfully connected to video stream at {stream_url}")
             
-            while not self.stop_event.is_set():
-                ret, frame = cap.read()
-                if not ret:
-                    logger.warning("Failed to receive frame from video stream")
-                    time.sleep(0.1)
+            buffer = b''
+            
+            for chunk in response.iter_content(chunk_size=1024):
+                if self.stop_event.is_set():
+                    break
+                    
+                if not chunk:
                     continue
+                    
+                buffer += chunk
+                frame_data, buffer = extract_jpeg(buffer)
                 
-                # Keep only the most recent frame by emptying the queue first
-                while not self.frame_queue.empty():
-                    try:
-                        self.frame_queue.get_nowait()
-                        self.frame_queue.task_done()
-                    except queue.Empty:
-                        break
-                
-                try:
-                    self.frame_queue.put_nowait(frame)
-                    self.last_frame = frame
-                except queue.Full:
-                    # This shouldn't happen as we just emptied the queue
-                    pass
-        
-        finally:
-            cap.release()
+                if frame_data is not None:
+                    # Convert to OpenCV format
+                    frame_array = np.frombuffer(frame_data, dtype=np.uint8)
+                    frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+                    
+                    if frame is not None:
+                        # Keep only the most recent frame
+                        while not self.frame_queue.empty():
+                            try:
+                                self.frame_queue.get_nowait()
+                                self.frame_queue.task_done()
+                            except queue.Empty:
+                                break
+                        
+                        try:
+                            self.frame_queue.put_nowait(frame)
+                            self.last_frame = frame
+                        except queue.Full:
+                            pass
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Stream connection error: {e}")
             self.connected = False
-    
+        finally:
+            self.connected = False
+
     def get_latest_frame(self) -> Optional[np.ndarray]:
-        """Get the latest frame from the queue, non-blocking"""
+        """[get_latest_frame method remains the same]"""
         try:
             return self.frame_queue.get_nowait()
         except queue.Empty:
