@@ -14,7 +14,7 @@ import argparse
 import pygame
 import numpy as np
 import cv2
-from . import Agent, Action, ActionEnum, State
+from . import Agent, Action, ActionEnum, State, UGVLogger
 
 
 class UGVDemo:
@@ -83,6 +83,9 @@ class UGVDemo:
         # Timer for status updates
         self.last_update_time = time.time()
         self.update_interval = 0.1  # seconds
+
+        # Logger
+        self.logger = UGVLogger()
         
         print("UGV Demo initialized. Use WASD to control the robot.")
         print("Press ESCAPE or close the window to exit.")
@@ -116,7 +119,8 @@ class UGVDemo:
             forward = 0.0 if abs(forward) < self.JOYSTICK_DEADZONE else forward
             turn = 0.0 if abs(turn) < self.JOYSTICK_DEADZONE else turn
 
-            boost = boost * 0.75 + 0.25
+            clamp_point = 0.1
+            boost = boost * (1 - clamp_point)
             
             # Convert to tank controls
             # When turning right (positive turn), right track slows down
@@ -133,7 +137,7 @@ class UGVDemo:
             #     left_y = max(min(left_y, 1.0), -1.0)
             #     right_y = max(min(right_y, 1.0), -1.0)
             
-            clamp = 0.25 + boost
+            clamp = clamp_point + boost
             
             left_y = max(min(left_y, clamp), -clamp)
             right_y = max(min(right_y, clamp), -clamp)
@@ -190,6 +194,13 @@ class UGVDemo:
         
         try:
             self.current_state = self.agent.step(action)
+            
+            # Log the state and control inputs
+            self.logger.log_state(
+                self.current_state,
+                self.left_speed,
+                self.right_speed
+            )
             
             # Add battery voltage to history if available
             if self.current_state.feedback and hasattr(self.current_state.feedback, 'v'):

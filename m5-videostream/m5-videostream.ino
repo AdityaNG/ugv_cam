@@ -23,6 +23,24 @@ WiFiServer server(80);
 static void jpegStream(WiFiClient* client);
 
 void setup() {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    WiFi.setSleep(false);
+    Serial.println("");
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+    // Wait for connection
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.print(".");
+    }
+
+    Serial.println("");
+    Serial.print("Connected to ");
+    Serial.println(ssid);
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+
     TimerCAM.begin();
 
     if (!TimerCAM.Camera.begin()) {
@@ -32,6 +50,7 @@ void setup() {
     Serial.println("Camera Init Success");
 
     TimerCAM.Camera.sensor->set_pixformat(TimerCAM.Camera.sensor, PIXFORMAT_JPEG);
+    TimerCAM.Camera.sensor->set_quality(TimerCAM.Camera.sensor, 40);
     // 2MP Sensor
     TimerCAM.Camera.sensor->set_framesize(TimerCAM.Camera.sensor, FRAMESIZE_VGA);
     // 3MP Sensor
@@ -40,23 +59,6 @@ void setup() {
     TimerCAM.Camera.sensor->set_vflip(TimerCAM.Camera.sensor, 1);
     TimerCAM.Camera.sensor->set_hmirror(TimerCAM.Camera.sensor, 0);
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    WiFi.setSleep(false);
-    Serial.println("");
-    Serial.print("Connecting to ");
-    Serial.println(ssid);
-    // Wait for connection
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-
-    Serial.println("");
-    Serial.print("Connected to ");
-    Serial.println(ssid);
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
     server.begin();
 }
 
